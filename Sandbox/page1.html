@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Malware Analysis</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <h1 class="heading">ShadowBox</h1>
+
+    <div class="container">
+       
+        <h2>Upload a File and Check</h2>
+
+        <form id="uploadForm" enctype="multipart/form-data">
+            <label id="fileLabel" for="fileInput">Choose File</label> &nbsp; &nbsp; &nbsp;
+            <input type="file" id="fileInput" name="file" />
+            
+            <button class="static" type="button" onclick="uploadAndCheckFile()">Static Analysis</button>
+            <button class="dynamic" type="button" onclick="window.location.href='https://cuckoo.cert.ee/'">Dynamic Analysis</button>
+        </form>
+        
+        <div id="output"></div>
+    </div>
+
+    <script>
+        async function uploadAndCheckFile() {
+            const fileInput = document.getElementById("fileInput");
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                displayMessage("Please select a file.");
+                return;
+            }
+
+            const fileReader = new FileReader();
+
+            fileReader.onload = async function (event) {
+                const fileData = event.target.result;
+                const fileBuffer = new Uint8Array(fileData);
+
+                
+                try {
+                    // Calculate SHA-256 hash
+                    const hashHex = await calculateSHA256(fileBuffer);
+                    console.log("SHA-256 Hash:", hashHex);
+
+                    // Check with VirusTotal
+                    const report = await checkWithVirusTotal(hashHex);
+                    console.log("VirusTotal Report:", report);
+                    displayMessage("File uploaded and checked successfully.");
+
+                    // Open a new tab to display the report
+                    openReportTab(report);
+                } catch (error) {
+                    console.error(error);
+                    displayMessage("An error occurred while processing the file.");
+                }
+            };
+
+            fileReader.onerror = function () {
+                displayMessage("Error reading the file.");
+            };
+
+            fileReader.readAsArrayBuffer(file);
+        }
+
+
+        async function calculateSHA256(buffer) {
+            const hashBuffer = await crypto.subtle.digest(
+                "SHA-256",
+                buffer
+            );
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray
+                .map((byte) => byte.toString(16).padStart(2, "0"))
+                .join("");
+        }
+
+        async function checkWithVirusTotal(hash) {
+            const apiKey = "1a666f5f70ebf40fb31624efa407c90f8db2e3b304f969143b03d0a1c15b924d";
+            const apiUrl = `https://www.virustotal.com/api/v3/files/${hash}`;
+
+            const response = await fetch(apiUrl, {
+                headers: {
+                    'x-apikey': apiKey,
+                },
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                return data;
+            } else {
+                throw new Error("Failed to fetch VirusTotal report");
+            }
+        }
+
+        function displayMessage(message) {
+            const output = document.getElementById("output");
+            output.innerHTML = message;
+        }
+
+        // function openReportTab(report) {
+        //     const reportContent = JSON.stringify(report, null, 4); // Indented JSON format
+        //     const newTab = window.open();
+        //     newTab.document.write(`<pre>${reportContent}</pre>`);
+        // }
+        function openReportTab(report) {
+    // Open a new tab
+    const newTab = window.open();
+    newTab.document.title = " Malware Report";
+    const styles = `
+        <style>
+            body { font-family: Arial, sans-serif; margin: 20px; background-color: #f9f9f9; }
+            .json-object, .json-array { margin-left: 20px; }
+            .json-key { font-weight: bold; color: #333; }
+            .json-value { margin-left: 10px; }
+            ul { list-style-type: none; padding: 0; }
+            li { margin: 5px 0; }
+            .json-array > li:before { content: "- "; color: #555; }
+        </style>
+    `;
+
+    // Ensure new tab document is ready
+    newTab.document.onreadystatechange = () => {
+        if (newTab.document.readyState === 'complete') {
+            injectContent(newTab, report);
+        }
+    };
+
+    if (newTab.document.readyState === 'complete') {
+        injectContent(newTab, report);
+    }
+}
+
+function injectContent(newTab, report) {
+    // Add a style block
+    const style = newTab.document.createElement('style');
+    style.textContent = `
+    body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+    background-color: #f0f0f0;
+}
+
+h1 {
+    color: #333;
+    text-align: center;
+    border-bottom: 2px solid #333;
+    padding-bottom: 10px;
+    margin-bottom: 30px;
+}
+
+.json-object,
+.json-array {
+    margin-left: 20px;
+    margin-bottom: 30px;
+}
+
+.json-key {
+    margin-left: 10px;
+    margin-bottom: 5px;
+    font-weight: bold;
+    color: #007bff;
+}
+
+.json-value {
+    margin-left: 10px;
+    margin-bottom: 5px;
+    color: #333;
+}
+
+.json-string {
+    color: #28a745;
+}
+
+.json-number {
+    color: #17a2b8;
+}
+.json-array {
+    background-color: #dee2e6;
+    border-radius: 5px;
+}
+
+    `;
+    newTab.document.head.appendChild(style);
+
+    // Generate and append the report content
+    newTab.document.body.innerHTML = `<h1>Static Analysis Report</h1>` + jsonToHtml(report);
+}
+
+// Recursive function to convert JSON to HTML
+function jsonToHtml(value) {
+    if (typeof value === 'object' && value !== null) {
+        if (Array.isArray(value)) {
+            let html = '<div class="json-array">';
+            value.forEach((item) => {
+                html += `<li>${jsonToHtml(item)}</li>`;
+            });
+            html += '</ul>';
+            return html;
+        } else {
+            let html = '<div class="json-object"><ul>';
+            Object.entries(value).forEach(([key, val]) => {
+                html += `<li><span class="json-key">${key}:</span><span class="json-value">${jsonToHtml(val)}</span></li>`;
+            });
+            html += '</ul></div>';
+            return html;
+        }
+    } else {
+        // Convert and escape the value to ensure it's safely rendered as text
+        return `<span>${String(value).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>`;
+    }
+}
+
+    </script>
+</body>
+</html>
